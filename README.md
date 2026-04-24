@@ -1,73 +1,54 @@
-# React + TypeScript + Vite
+# mcpviz
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Interactive MCP (Model Context Protocol) visualizer for **Talk 6: Pitfalls of MCP - The Protocol Everyone's Using Wrong**.
 
-Currently, two official plugins are available:
+## Demos
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+### 1. Context Pollution
+Register MCP tools and watch the context window fill up. Each tool adds its description and parameter schema to the context. Simulate tool calls to see results accumulate.
 
-## React Compiler
+- Animated token grid (1,000 blocks = 200k context window)
+- Stacked progress bar: system prompt, user message, tool descriptions, tool results
+- Health indicator with real-time token counts
+- Register tools individually or all 20 at once
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 2. Tool Descriptions
+Compare ambiguous vs improved tool descriptions. See how wording affects which tool a simulated model selects.
 
-## Expanding the ESLint configuration
+- Side-by-side probability distributions
+- "Search" problem: three tools all called "search"
+- "Read" problem: file read vs database schema vs SQL
+- Best practice tips with bad/good examples
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### 3. Protocol Flow
+Step-through animated sequence diagrams showing MCP request/response patterns and failure modes.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- **Happy Path**: Simple tool call succeeds
+- **Context Explosion**: Tool results fill context until overflow
+- **Wrong Tool Selection**: Ambiguous descriptions cause 3 attempts
+- **Timeout Cascade**: Long-running tool with no streaming, blind retries
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Quick Start
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev      # Starts on port 5180
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Or with Make:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+make dev         # Install + dev server
+make build       # Production build
 ```
+
+## Stack
+
+- Vite + React + TypeScript
+- Framer Motion (animations)
+- Tailwind CSS (styling)
+- D3.js / Three.js (available for future 3D visualizations)
+
+## Talk Outline
+
+See `~/thought-leader/outlines/06-mcp-pitfalls.md` for the full talk outline and speaker notes.
