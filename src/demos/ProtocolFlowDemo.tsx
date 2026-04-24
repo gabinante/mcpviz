@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as d3 from 'd3';
 import { PROTOCOL_SCENARIOS } from '../data/protocol';
 import type { ProtocolMessage, ProtocolScenario } from '../data/protocol';
 import { formatTokenCount, formatLatency } from '../utils/format';
@@ -287,6 +288,182 @@ function FlowDiagram({ scenario, visibleCount }: FlowProps) {
             );
           })}
       </svg>
+    </div>
+  );
+}
+
+// D3.js cumulative token cost chart
+function TokenCostChart({
+  messages,
+  visibleCount,
+}: {
+  messages: ProtocolMessage[];
+  visibleCount: number;
+}) {
+  const chartRef = useRef<SVGSVGElement>(null);
+  const width = 260;
+  const height = 120;
+  const margin = { top: 8, right: 12, bottom: 24, left: 40 };
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    const svg = d3.select(chartRef.current);
+    svg.selectAll('*').remove();
+
+    const visibleMessages = messages.slice(0, visibleCount);
+    const cumulativeData = visibleMessages.reduce<
+      { idx: number; tokens: number; label: string; isError: boolean }[]
+    >((acc, msg, i) => {
+      const prev = acc.length > 0 ? acc[acc.length - 1].tokens : 0;
+      acc.push({
+        idx: i + 1,
+        tokens: prev + msg.tokenCost,
+        label: msg.label,
+        isError: !!msg.failure,
+      });
+      return acc;
+    }, []);
+
+    // Add origin point
+    const chartData = [{ idx: 0, tokens: 0, label: 'Start', isError: false }, ...cumulativeData];
+
+    const iw = width - margin.left - margin.right;
+    const ih = height - margin.top - margin.bottom;
+
+    const x = d3
+      .scaleLinear()
+      .domain([0, Math.max(messages.length, 1)])
+      .range([0, iw]);
+
+    const maxTokens = Math.max(
+      d3.max(chartData, (d) => d.tokens) ?? 100,
+      100
+    );
+
+    const y = d3
+      .scaleLinear()
+      .domain([0, maxTokens])
+      .range([ih, 0]);
+
+    const g = svg
+      .append('g')
+      .attr('transform', `translate(${margin.left},${margin.top})`);
+
+    // Grid lines
+    g.append('g')
+      .attr('class', 'grid')
+      .selectAll('line')
+      .data(y.ticks(4))
+      .join('line')
+      .attr('x1', 0)
+      .attr('x2', iw)
+      .attr('y1', (d) => y(d))
+      .attr('y2', (d) => y(d))
+      .attr('stroke', 'rgba(0,229,160,0.06)')
+      .attr('stroke-dasharray', '2 2');
+
+    // Area
+    const area = d3
+      .area<(typeof chartData)[0]>()
+      .x((d) => x(d.idx))
+      .y0(ih)
+      .y1((d) => y(d.tokens))
+      .curve(d3.curveMonotoneX);
+
+    g.append('path')
+      .datum(chartData)
+      .attr('fill', 'rgba(229, 160, 0, 0.15)')
+      .attr('d', area);
+
+    // Line
+    const line = d3
+      .line<(typeof chartData)[0]>()
+      .x((d) => x(d.idx))
+      .y((d) => y(d.tokens))
+      .curve(d3.curveMonotoneX);
+
+    g.append('path')
+      .datum(chartData)
+      .attr('fill', 'none')
+      .attr('stroke', 'var(--warning)')
+      .attr('stroke-width', 2)
+      .attr('d', line);
+
+    // Error dots
+    g.selectAll('.error-dot')
+      .data(chartData.filter((d) => d.isError))
+      .join('circle')
+      .attr('class', 'error-dot')
+      .attr('cx', (d) => x(d.idx))
+      .attr('cy', (d) => y(d.tokens))
+      .attr('r', 4)
+      .attr('fill', 'var(--danger)')
+      .attr('stroke', 'var(--bg-primary)')
+      .attr('stroke-width', 1.5);
+
+    // Normal dots
+    g.selectAll('.dot')
+      .data(chartData.filter((d) => !d.isError && d.idx > 0))
+      .join('circle')
+      .attr('class', 'dot')
+      .attr('cx', (d) => x(d.idx))
+      .attr('cy', (d) => y(d.tokens))
+      .attr('r', 3)
+      .attr('fill', 'var(--warning)')
+      .attr('stroke', 'var(--bg-primary)')
+      .attr('stroke-width', 1);
+
+    // X axis
+    g.append('g')
+      .attr('transform', `translate(0,${ih})`)
+      .call(
+        d3
+          .axisBottom(x)
+          .ticks(Math.min(messages.length, 6))
+          .tickFormat((d) => `#${d}`)
+      )
+      .selectAll('text')
+      .attr('fill', 'var(--text-muted)')
+      .style('font-size', '9px');
+
+    g.selectAll('.domain, .tick line').attr('stroke', 'rgba(0,229,160,0.1)');
+
+    // Y axis
+    g.append('g')
+      .call(
+        d3
+          .axisLeft(y)
+          .ticks(4)
+          .tickFormat((d) => {
+            const v = d.valueOf();
+            return v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`;
+          })
+      )
+      .selectAll('text')
+      .attr('fill', 'var(--text-muted)')
+      .style('font-size', '9px');
+
+    g.selectAll('.domain, .tick line').attr('stroke', 'rgba(0,229,160,0.1)');
+  }, [messages, visibleCount, width, height, margin.top, margin.right, margin.bottom, margin.left]);
+
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 12,
+          color: 'var(--text-muted)',
+          marginBottom: 8,
+        }}
+      >
+        CUMULATIVE TOKEN COST
+      </div>
+      <svg
+        ref={chartRef}
+        width={width}
+        height={height}
+        style={{ overflow: 'visible' }}
+      />
     </div>
   );
 }
@@ -583,6 +760,14 @@ export function ProtocolFlowDemo() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* D3.js Token Cost Chart */}
+          <div className="glass-card" style={{ padding: '16px' }}>
+            <TokenCostChart
+              messages={scenario.messages}
+              visibleCount={visibleMessages}
+            />
           </div>
 
           {/* Message List */}
