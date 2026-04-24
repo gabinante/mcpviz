@@ -1,5 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as d3 from 'd3';
 import { SAMPLE_TOOLS, CATEGORY_COLORS, CATEGORY_LABELS } from '../data/tools';
 import type { MCPTool } from '../data/tools';
 import {
@@ -12,6 +13,129 @@ import {
 const CONTEXT_WINDOW_SIZE = 200_000;
 const SYSTEM_PROMPT_TOKENS = 1500;
 const USER_MESSAGE_TOKENS = 200;
+
+// D3.js Donut Chart component
+interface DonutDatum {
+  label: string;
+  value: number;
+  color: string;
+}
+
+function TokenDonutChart({
+  data,
+  totalLabel,
+  totalSublabel,
+  healthColor,
+}: {
+  data: DonutDatum[];
+  totalLabel: string;
+  totalSublabel: string;
+  healthColor: string;
+}) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const size = 200;
+  const radius = size / 2;
+  const innerRadius = radius * 0.6;
+
+  useEffect(() => {
+    if (!svgRef.current) return;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
+
+    const g = svg
+      .append('g')
+      .attr('transform', `translate(${radius}, ${radius})`);
+
+    const pie = d3
+      .pie<DonutDatum>()
+      .value((d) => Math.max(d.value, 0))
+      .sort(null)
+      .padAngle(0.02);
+
+    const arc = d3
+      .arc<d3.PieArcDatum<DonutDatum>>()
+      .innerRadius(innerRadius)
+      .outerRadius(radius - 4)
+      .cornerRadius(3);
+
+    const hoverArc = d3
+      .arc<d3.PieArcDatum<DonutDatum>>()
+      .innerRadius(innerRadius - 2)
+      .outerRadius(radius - 1)
+      .cornerRadius(3);
+
+    const arcs = g
+      .selectAll<SVGPathElement, d3.PieArcDatum<DonutDatum>>('.arc')
+      .data(pie(data.filter((d) => d.value > 0)))
+      .join('path')
+      .attr('class', 'arc')
+      .attr('fill', (d) => d.data.color)
+      .attr('stroke', 'var(--bg-primary)')
+      .attr('stroke-width', 1)
+      .style('cursor', 'pointer')
+      .style('transition', 'opacity 0.2s ease');
+
+    // Animate arcs in
+    arcs
+      .attr('d', d3.arc<d3.PieArcDatum<DonutDatum>>()
+        .innerRadius(innerRadius)
+        .outerRadius(innerRadius)
+        .cornerRadius(3))
+      .transition()
+      .duration(600)
+      .attrTween('d', function (d) {
+        const interpolate = d3.interpolate(
+          { startAngle: d.startAngle, endAngle: d.startAngle },
+          d
+        );
+        return (t: number) => arc(interpolate(t)) ?? '';
+      });
+
+    // Hover effects
+    arcs
+      .on('mouseover', function (_, d) {
+        d3.select(this)
+          .transition()
+          .duration(150)
+          .attr('d', hoverArc(d) ?? '');
+      })
+      .on('mouseout', function (_, d) {
+        d3.select(this)
+          .transition()
+          .duration(150)
+          .attr('d', arc(d) ?? '');
+      });
+
+    // Center text
+    g.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '-0.2em')
+      .style('font-size', '20px')
+      .style('font-weight', '700')
+      .style('font-family', "'JetBrains Mono', monospace")
+      .style('fill', healthColor)
+      .text(totalLabel);
+
+    g.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '1.4em')
+      .style('font-size', '10px')
+      .style('fill', 'var(--text-muted)')
+      .text(totalSublabel);
+  }, [data, totalLabel, totalSublabel, healthColor, radius, innerRadius]);
+
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
+      <svg
+        ref={svgRef}
+        width={size}
+        height={size}
+        style={{ overflow: 'visible' }}
+      />
+    </div>
+  );
+}
 
 interface ToolResult {
   toolName: string;
@@ -91,7 +215,7 @@ export function ContextPollutionDemo() {
   }, []);
 
   // Auto-add effect
-  useState(() => {
+  useEffect(() => {
     if (autoAddSpeed === 0) return;
     const interval = setInterval(() => {
       setRegisteredTools((prev) => {
@@ -106,7 +230,7 @@ export function ContextPollutionDemo() {
       });
     }, 1000 / autoAddSpeed);
     return () => clearInterval(interval);
-  });
+  }, [autoAddSpeed]);
 
   // Context window grid visualization
   const gridCols = 50;
@@ -654,7 +778,7 @@ export function ContextPollutionDemo() {
             </div>
           </div>
 
-          {/* Stats */}
+          {/* D3.js Donut Chart - Token Breakdown */}
           <div className="glass-card" style={{ padding: '16px' }}>
             <h3
               style={{
@@ -665,12 +789,26 @@ export function ContextPollutionDemo() {
             >
               Token Breakdown
             </h3>
+            <TokenDonutChart
+              data={[
+                { label: 'System', value: SYSTEM_PROMPT_TOKENS, color: 'rgba(138, 155, 145, 0.8)' },
+                { label: 'User', value: USER_MESSAGE_TOKENS, color: 'rgba(74, 158, 255, 0.8)' },
+                { label: 'Descriptions', value: descriptionTokens, color: 'rgba(229, 160, 0, 0.8)' },
+                { label: 'Parameters', value: parameterTokens, color: 'rgba(200, 140, 0, 0.6)' },
+                { label: 'Results', value: resultTokens, color: 'rgba(229, 80, 80, 0.8)' },
+                { label: 'Available', value: Math.max(0, availableTokens), color: 'rgba(26, 37, 32, 0.5)' },
+              ]}
+              totalLabel={formatTokenCount(totalToolTokens + resultTokens)}
+              totalSublabel="MCP overhead"
+              healthColor={getContextHealthColor(usedPercentage)}
+            />
             <div
               style={{
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 8,
                 fontSize: 13,
+                marginTop: 16,
               }}
             >
               <div
